@@ -60,15 +60,11 @@ which you developed your program). Each group should turn in a single copy of th
 names of all group members should appear in the README file.
 */
 
-
 #include "stdafx.h"
-
 #include <iostream>
-#include <ostream>
 #include <fstream>
 #include <string>
 #include <vector>
-#include <algorithm>
 #include <stack>
 #include <queue>
 
@@ -82,7 +78,7 @@ struct Variable
   public:
     char name;
     int value;
-    int valueIndex;
+    bool assigned = false;
     vector<int> domain;
     queue<int> remainingValues;
     vector<Constraint*> constraints;
@@ -91,14 +87,8 @@ struct Variable
     {
       name = varName;
       domain = values;
-      valueIndex = 0;
-      value = domain[valueIndex];
-
-      cout << name << ": ";
-      for (int x = 0; x < domain.size(); x++)
-        cout << domain[x] << " ";
-      cout << endl;
-
+      // Initialized value
+      value = domain[0];
       ResetQueue();
     }
 
@@ -106,6 +96,14 @@ struct Variable
     {
       for (int x = 0; x < domain.size(); x++)
         remainingValues.push(domain[x]);
+    }
+
+    void Print() 
+    {
+      cout << name << ": ";
+      for (int x = 0; x < domain.size(); x++)
+        cout << domain[x] << " ";
+      cout << endl;
     }
 };
 
@@ -167,36 +165,33 @@ struct Constraint
     }
 };
 
+#pragma region
 Variable* FindVariable(char);
 vector<Variable*> BackCheck(vector<Variable*>);
 bool CheckIfValid(vector<Variable*>);
 void SortVariables();
-void SortValues();
+void SortValues(Variable*);
 
 vector<Variable*> variables;
 vector<Constraint*> constraints;
-ifstream varFile;
-string varFileName;
-  
 stack<Variable*> remainingVariables;
-
-ifstream conFile;
-string conFileName;
+ifstream varFile;
+ifstream conFile; 
 
 int steps = 0;
 bool solutionFound = false;
+#pragma endregion
 
 int main(int argc, char *argv[])
 {
-  varFileName = argv[1];
-  conFileName = argv[2];
+#pragma region
   bool forwardCheck = false;
 
   if (argc > 3)
     forwardCheck = true;
 
-  varFile.open(varFileName);
-  conFile.open(conFileName);
+  varFile.open(argv[1]);
+  conFile.open(argv[2]);
 
   string varLine = "";
   // var file input example
@@ -206,7 +201,6 @@ int main(int argc, char *argv[])
   // D: 1 2 3 4 5
   // E: 1 2 3
   // F: 1 2
-  std::cout << endl << "Variables:" << endl;
   while (getline(varFile, varLine))
   {
     if (varLine.size() > 0 && varLine[0] != ' ' && varLine[0] != NULL)
@@ -218,8 +212,6 @@ int main(int argc, char *argv[])
       
       Variable* v = new Variable(varLine[0], values);
       variables.push_back(v);
-
-      //std::cout << varLine << endl;
     }
   }
 
@@ -231,32 +223,23 @@ int main(int argc, char *argv[])
   // C > E
   // A > D
   // D = E
-  std::cout << endl << "Constraints: " << endl;
   while (getline(conFile, conLine))
   {
-    if (conLine.size() > 0 && conLine[0] != ' ' && conLine[0] != NULL)
+    if (conLine.size() > 0 && conLine[0] != ' ' && conLine[0] != 0)
     {
       Variable* main = FindVariable(conLine[0]);
       Variable* compare = FindVariable(conLine[4]);
       
       main->constraints.push_back(new Constraint(main, compare, conLine[2]));
 
-      /*
-      if (conLine[2] == '>') 
-        compare->constraints.push_back(new Constraint(compare, main, '<'));
-      else if (conLine[2] == '<')
-        compare->constraints.push_back(new Constraint(compare, main, '>'));
-      else 
-        compare->constraints.push_back(new Constraint(compare, main, conLine[2]));
-      */
       constraints.push_back(new Constraint(main, compare, conLine[2]));
-
-      std::cout << conLine << endl;
     }
   }
 
   varFile.close();
   conFile.close();
+
+#pragma endregion
 
   SortVariables();
   for (int x = 0; x < variables.size(); x++)
@@ -268,7 +251,7 @@ int main(int argc, char *argv[])
   //if (forwardCheck)
   //ForwardCheck(startingVector);
   //else
-    BackCheck(startingVector);
+  BackCheck(startingVector);
 
   return 0;
 }
@@ -286,104 +269,132 @@ Variable* FindVariable(char name)
 // 3. F = 1, E = 1, A = 5, B = 2, C = 2, D = 1  solution
 vector<Variable*> BackCheck(vector<Variable*> vars)
 {
-  // Check if all variables are assigned
-  if (CheckIfValid(vars))
-    return vars;
-
-  if (steps >= 30)
-    return vars;
+  // Check if a solution has already been found
+  // If it's too big, return it
+  // Check if it's a solution after all
+  // If it fails all of those, are we out of steps anyway?
+  if (solutionFound || vars.size() > variables.size() || CheckIfValid(vars) || steps >= 30) 
+  { return vars; }
 
   steps++;
 
-  // Sort REMAINING Variables. Pick the first one after sorting
-  //SortVariables();
+  if (remainingVariables.empty()) { return vars; }
 
-  Variable* v = remainingVariables.top();
-  vector<Variable*> newVars = vars;
-  remainingVariables.pop();
-  v->ResetQueue();
-
-  // Sort Remaining VALUES of the variable.
-  // SortValues(v);
-  
-  // Go through the possible values of the current variable to assign
-  // Sort Remaining Values before going through thm
-  while (v->remainingValues.size() > 0) 
+  // Check if there are enough remaining variables to check for anyway
+  else
   {
-    // Check if all variables are assigned
-    if (CheckIfValid(newVars))
-      return newVars;
+    // Get the top variable of the remainingVariables stack and pop it
+    Variable* v = remainingVariables.top();
+    remainingVariables.pop();
 
-    v->value = v->remainingValues.front();
-    v->remainingValues.pop();
+    // Sort Remaining VALUES of the variable.
+    SortValues(v);
 
-    bool ok = true;
-
-    // Go through this variable's constraints to check if it fails any of them
-    for (int y = 0; y < v->constraints.size(); y++)
+    // Go through the possible values of the current variable
+    // If the current variable has no more values to check, return the original vars list.
+    while (v->remainingValues.size() > 0)
     {
-      if (!v->constraints[y]->IsSatisfied())
+      // Set the variable's current value to the next remainingValue in the queue
+      v->value = v->remainingValues.front();
+      v->remainingValues.pop();
+
+      bool ok = true;
+
+      // Go through this variable's constraints
+      // Check if it fails any of them
+      for (int y = 0; y < v->constraints.size(); y++)
       {
-        ok = false;
-        break;
+        // Compare only to the variables that have been assigned a value
+        // If it fails at any point, break the loop
+        if (v->constraints[y]->compareVar->assigned && !v->constraints[y]->IsSatisfied())
+        {
+          ok = false;
+          break;
+        }
       }
+
+      // If the variable at the current variable passes its constraints, push it to a new list.
+      if (ok)
+      {
+        v->assigned = true;
+
+        // Copy the vars list to a newVars list
+        vector<Variable*> newVars = vars;
+        newVars.push_back(v);
+
+        // Just in case, if newVars has more variables than it should, return the vars
+        if (newVars.size() > variables.size()) { return vars; }
+
+        // Otherwise, if it's the same size, check if it's a solution
+        // If it's not a solution, continue the search;
+        if (newVars.size() == vars.size() && !solutionFound)
+        {
+          if (CheckIfValid(newVars)) { return newVars; }
+          v->assigned = false;
+          continue;
+        }
+
+        // If we still have more variables to check, BackCheck the newVars list
+        // If the list that is returned is the same size as variables
+        else
+        {
+          vector<Variable*> returnVars = BackCheck(newVars);
+          if (returnVars.size() == variables.size()) { return returnVars; }
+          v->assigned = false;
+          continue;
+        }
+        // If newVars and variables have the same number of variables in them, check if they're valid
+        if (newVars.size() == variables.size() && CheckIfValid(newVars)) { return newVars; }
+
+        // If not, recursively check for the next one
+        // If we returned from BackCheck and nothing's changed, 
+        // we havn't found a solution yet
+        // wrap to the next available value of this variable
+      }
+
+      // If it fails, but we already found a solution, don't bother printing the failure
+      else if (!solutionFound)
+      {
+        for (int x = 0; x < vars.size(); x++)
+          std::cout << vars[x]->name << " = " << vars[x]->value << ", ";
+        std::cout << v->name << " = " << v->value << " Failure" << endl;
+      }
+
+      if (steps >= 30) { return vars; }
     }
 
-    if (ok)
-    {
-      cout << "OK" << endl;
-      newVars.push_back(v);
+    // If we went through each of the remaining values for the variable
+    // and we havn't found a solution, return vars so the previous
+    // stack in the recursion can go through its values
 
-      if (CheckIfValid(newVars))
-        return newVars;
-      else
-        BackCheck(newVars);
-    }
-    else if (!solutionFound)
-    {
-      for (int x = 0; x < vars.size(); x++)
-        std::cout << vars[x]->name << " = " << vars[x]->value << ", ";
-      std::cout << v->name << " = " << v->value << " Failure" << endl;
-    }
-
-    if (steps >= 30)
-      return vars;
-  }
-
-  if (steps >= 30)
+    // Reset the values for this variable
+    v->ResetQueue();
+    remainingVariables.push(v);
     return vars;
-
-  std::cout << "Did not find satisfying value for " << v->name << endl;
-  v->ResetQueue();
-  remainingVariables.push(v);
-  return vars;
+  }
 }
 
 bool CheckIfValid(vector<Variable*> vars) 
 {
-  // std::cout << "In CheckIfValid" << endl;
-  if (!solutionFound)
+  if (vars.size() == variables.size())
   {
-    if (vars.size() == variables.size())
-    {
-      for (int x = 0; x < vars.size(); x++)
-        for (int y = 0; y < vars[x]->constraints.size(); y++)
-          if (!vars[x]->constraints[y]->IsSatisfied())
-            return false;
-    
-      solutionFound = true;
-      for (int x = 0; x < vars.size(); x++)
-        std::cout << vars[x]->name << " = " << vars[x]->value << ", ";
-      std::cout << " Solution" << endl;
+    for (int x = 0; x < vars.size(); x++)
+      for (int y = 0; y < vars[x]->constraints.size(); y++)
+        if (!vars[x]->constraints[y]->IsSatisfied())
+          return false;
 
-      return true;
-    }
-    else
-      return false;
+    for (int x = 0; x < vars.size(); x++)
+      std::cout << vars[x]->name << " = " << vars[x]->value << ", ";
+    std::cout << " Solution" << endl;
+
+    return solutionFound = true;
   }
   else
-    return true;
+    return false;
 }
+
+#pragma region
+
 /*
 Most ConstrainED
 - Variable with the FEWEST values available
@@ -400,23 +411,30 @@ Most ContrainING
 */
 void SortVariables()
 {
-  for (int i = 1; i < variables.size(); ++i)
+  vector<Variable*> vars;
+  for (int x = 0; x < remainingVariables.size(); x++)
+  {
+    vars.push_back(remainingVariables.top());
+    remainingVariables.pop();
+  }
+
+  for (int i = 1; i < vars.size(); ++i)
   {
     bool inplace = true;
     int j = 0;
     for (; j < i; ++j)
     {
       // Sort by Most ContrainED (fewest remaining values)
-      if (variables[i]->remainingValues.size() > variables[j]->remainingValues.size())
+      if (vars[i]->remainingValues.size() > vars[j]->remainingValues.size())
         inplace = false;
 
-      else if (variables[i]->remainingValues.size() == variables[j]->remainingValues.size())
+      else if (vars[i]->remainingValues.size() == vars[j]->remainingValues.size())
       {
         // If it's a tie, sort by Most ContstraING (most constraints)
-        if (variables[i]->constraints.size() < variables[j]->constraints.size())
+        if (vars[i]->constraints.size() < vars[j]->constraints.size())
           inplace = false;
         // Otherwise, sort alphabetically
-        else if (variables[i]->name > variables[j]->name)
+        else if (vars[i]->name > vars[j]->name)
           inplace = false;
       }
 
@@ -426,27 +444,73 @@ void SortVariables()
 
     if (!inplace)
     {
-      Variable* save = variables[i];
+      Variable* save = vars[i];
       for (int k = i; k > j; --k)
-        variables[k] = variables[k - 1];
+        vars[k] = vars[k - 1];
 
-      variables[j] = save;
+      vars[j] = save;
     }
   }
 
-  for (int x = 0; x < variables.size(); x++)
-    std::cout << variables[x]->name << " ";
-  std::cout << endl;
-  
+  for (int y = 0; y < vars.size(); y++) 
+  {
+    remainingVariables.push(vars.back());
+    vars.pop_back();
+  }
+
 }
 
 
 /*
-Whenever the solver needs to choose a VALUE during the search process, apply the least
-constraining value heuristic.If more than one value remains after applying this heuristic,
+Whenever the solver needs to choose a VALUE during the search process, apply the LEAST
+constraining value heuristic. If more than one value remains after applying this heuristic,
 break ties by preferring smaller values.
 */
-void SortValues(Variable* var) 
+void SortValues(Variable* var)
 {
+  for (int i = 1; i < var->domain.size(); ++i)
+  {
+    var->value = var->domain[i];
 
+    bool inplace = true;
+    int iSuccessCount = 0;
+    int j = 0;
+
+    // First check how many constraints the current I value succeeds in
+    for (int x = 0; x < constraints.size(); x++)
+      if (constraints[x]->IsSatisfied())
+        iSuccessCount++;
+
+    for (; j < i; ++j)
+    {
+      var->value = var->domain[j];
+
+      int jSuccessCount = 0;
+      // First check how many constraints the current J value succeeds in
+      for (int y = 0; y < constraints.size(); y++)
+        if (constraints[y]->IsSatisfied())
+          jSuccessCount++;
+
+      // Sort by Most ContrainED (fewest remaining values)
+      if (iSuccessCount > jSuccessCount)
+        inplace = false;
+      else if (var->domain[i] > var->domain[j])
+        inplace = false;
+
+      if (!inplace)
+        break;
+    }
+
+    // If we found a value out of place, sort it back in
+    if (!inplace)
+    {
+      int save = var->domain[i];
+      for (int k = i; k > j; --k)
+        var->domain[k] = var->domain[k - 1];
+
+      var->domain[j] = save;
+    }
+  }
 }
+
+#pragma endregion
