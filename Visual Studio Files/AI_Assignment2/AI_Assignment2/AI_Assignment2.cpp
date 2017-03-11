@@ -273,12 +273,8 @@ vector<Variable*> BackCheck(vector<Variable*> vars)
   // If it's too big, return it
   // Check if it's a solution after all
   // If it fails all of those, are we out of steps anyway?
-  if (solutionFound || vars.size() > variables.size() || CheckIfValid(vars) || steps >= 30) 
+  if (solutionFound || vars.size() > variables.size() || CheckIfValid(vars) || remainingVariables.empty() || steps >= 30) 
   { return vars; }
-
-  steps++;
-
-  if (remainingVariables.empty()) { return vars; }
 
   // Check if there are enough remaining variables to check for anyway
   else
@@ -327,34 +323,25 @@ vector<Variable*> BackCheck(vector<Variable*> vars)
 
         // Otherwise, if it's the same size, check if it's a solution
         // If it's not a solution, continue the search;
-        if (newVars.size() == vars.size() && !solutionFound)
-        {
-          if (CheckIfValid(newVars)) { return newVars; }
-          v->assigned = false;
-          continue;
-        }
+        if (newVars.size() == vars.size() && !solutionFound && CheckIfValid(newVars)) { return newVars; }
 
         // If we still have more variables to check, BackCheck the newVars list
         // If the list that is returned is the same size as variables
         else
-        {
-          vector<Variable*> returnVars = BackCheck(newVars);
-          if (returnVars.size() == variables.size()) { return returnVars; }
-          v->assigned = false;
-          continue;
-        }
+          BackCheck(newVars);
+
+        v->assigned = false;
+
         // If newVars and variables have the same number of variables in them, check if they're valid
         if (newVars.size() == variables.size() && CheckIfValid(newVars)) { return newVars; }
-
-        // If not, recursively check for the next one
-        // If we returned from BackCheck and nothing's changed, 
-        // we havn't found a solution yet
-        // wrap to the next available value of this variable
       }
 
       // If it fails, but we already found a solution, don't bother printing the failure
       else if (!solutionFound)
       {
+        steps++;
+
+        cout << steps << ": ";
         for (int x = 0; x < vars.size(); x++)
           std::cout << vars[x]->name << " = " << vars[x]->value << ", ";
         std::cout << v->name << " = " << v->value << " Failure" << endl;
@@ -367,6 +354,7 @@ vector<Variable*> BackCheck(vector<Variable*> vars)
     // and we havn't found a solution, return vars so the previous
     // stack in the recursion can go through its values
 
+    v->assigned = false;
     // Reset the values for this variable
     v->ResetQueue();
     remainingVariables.push(v);
@@ -376,6 +364,7 @@ vector<Variable*> BackCheck(vector<Variable*> vars)
 
 bool CheckIfValid(vector<Variable*> vars) 
 {
+  
   if (vars.size() == variables.size())
   {
     for (int x = 0; x < vars.size(); x++)
@@ -383,10 +372,14 @@ bool CheckIfValid(vector<Variable*> vars)
         if (!vars[x]->constraints[y]->IsSatisfied())
           return false;
 
-    for (int x = 0; x < vars.size(); x++)
-      std::cout << vars[x]->name << " = " << vars[x]->value << ", ";
-    std::cout << " Solution" << endl;
-
+    if (!solutionFound) 
+    {
+      steps++;
+      cout << steps << ": ";
+      for (int x = 0; x < vars.size(); x++)
+        std::cout << vars[x]->name << " = " << vars[x]->value << ", ";
+      std::cout << " Solution" << endl;
+    }
     return solutionFound = true;
   }
   else
